@@ -1,24 +1,31 @@
-import logging
 import azure.functions as func
+from azure.cosmos import CosmosClient
 import json
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
+class Function1:
+    def __init__(self, logger, cosmos_client):
+        self.logger = logger
+        self.cosmos_client = cosmos_client
 
-    name = req.params.get('name')
-    if not name:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            req_body = {}
-        name = req_body.get('name')
+    def run(self, req: func.HttpRequest) -> func.HttpResponse:
+        self.logger.info('Python HTTP trigger function processed a request.')
 
-    if name:
-        response_message = f"Hello, {name}. This HTTP triggered function executed successfully."
-    else:
-        response_message = (
-            "This HTTP triggered function executed successfully. "
-            "Pass a name in the query string or in the request body for a personalized response."
-        )
+        id = req.params.get('id')
+        if not id:
+            return func.HttpResponse("ID não fornecido", status_code=400)
 
-    return func.HttpResponse(response_message, status_code=200) 
+        container = self.cosmos_client.get_container_client("DioFlixDB", "movies")
+        query = f"SELECT * FROM c WHERE c.id = @id"
+        params = {"@id": id}
+        results = list(container.query_items(query=query, parameters=params))
+
+        if not results:
+            return func.HttpResponse("Nenhum filme encontrado", status_code=404)
+
+        return func.HttpResponse(json.dumps(results[0]), status_code=200, headers={"Content-Type": "application/json"})
+
+def main(req: func.HttpRequest, context: func.Context) -> func.HttpResponse:
+    logger = func.get_logger()
+    cosmos_client = CosmosClient(os.environ["CosmosDBConnectionString"])
+    function1 = Function1(logger, cosmos_client)
+    return function1.run(req)
